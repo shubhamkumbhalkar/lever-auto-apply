@@ -1,0 +1,6 @@
+click
+pyyaml
+requests
+anthropic
+pymupdf
+undetected-chromedriver

@@ -1,0 +1,49 @@
+# Lever Auto-Apply Profile Configuration
+# Copy this file to profile.yaml and fill in your details.
+
+first_name: "Jane"
+last_name: "Doe"
+email: "jane.doe@example.com"
+phone: "+1-555-123-4567"
+
+# Optional URLs
+linkedin_url: "https://linkedin.com/in/janedoe"
+github_url: "https://github.com/janedoe"
+website_url: ""
+
+# Current company/organization
+current_company: "Acme Corp"
+
+# Path to your resume PDF
+resume_path: "./resume.pdf"
+
+# Target roles to match (case-insensitive keyword matching)
+target_roles:
+  - "Software Engineer"
+  - "Software Development Engineer"
+  - "Software Developer"
+  - "Backend Engineer"
+  - "Full Stack Engineer"
+  - "Platform Engineer"
+
+# ATS score threshold (0-100)
+ats_threshold: 75
+
+# GDPR / consent
+consent:
+  marketing: true
+  store: true
+
+# Email notifications
+notification_email: "jane.doe@example.com"
+smtp:
+  host: "smtp.gmail.com"
+  port: 587
+  username: "jane.doe@example.com"
+  password: ""  # Use app password, or set SMTP_PASSWORD env var
+
+# Claude API
+anthropic_api_key: ""  # Or set ANTHROPIC_API_KEY env var
+
+# Schedule interval in minutes (for --watch mode)
+watch_interval_minutes: 30

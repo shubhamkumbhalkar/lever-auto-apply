@@ -1,6 +1,7 @@
-click
-pyyaml
-requests
-anthropic
-pymupdf
-undetected-chromedriver
+pyyaml>=6.0
+pdfplumber>=0.11.0
+requests>=2.32.0
+click>=8.1.0
+
+# Only needed for --backend anthropic
+# anthropic>=0.40.0

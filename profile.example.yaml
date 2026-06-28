@@ -42,8 +42,10 @@ smtp:
   username: "jane.doe@example.com"
   password: ""  # Use app password, or set SMTP_PASSWORD env var
 
-# Claude API
-anthropic_api_key: ""  # Or set ANTHROPIC_API_KEY env var
+# AI Backend — only needed if using --backend anthropic
+# Default backend is 'local' (uses kiro-cli, free, no key needed)
+# For Anthropic: set ANTHROPIC_API_KEY env var
+anthropic_api_key: ""
 
 # Schedule interval in minutes (for --watch mode)
 watch_interval_minutes: 30

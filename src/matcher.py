@@ -25,6 +25,60 @@ def extract_resume_text(resume_path: Path) -> str:
     return "\n".join(text_parts)
 
 
+US_INDICATORS = {"us", "usa", "united states"}
+US_STATES = {
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+    "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
+    "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana",
+    "maine", "maryland", "massachusetts", "michigan", "minnesota",
+    "mississippi", "missouri", "montana", "nebraska", "nevada",
+    "new hampshire", "new jersey", "new mexico", "new york",
+    "north carolina", "north dakota", "ohio", "oklahoma", "oregon",
+    "pennsylvania", "rhode island", "south carolina", "south dakota",
+    "tennessee", "texas", "utah", "vermont", "virginia", "washington",
+    "west virginia", "wisconsin", "wyoming", "district of columbia",
+}
+US_CITIES = {
+    "san francisco", "new york", "los angeles", "chicago", "seattle",
+    "austin", "boston", "denver", "atlanta", "miami", "dallas",
+    "houston", "phoenix", "philadelphia", "san diego", "san jose",
+    "portland", "minneapolis", "detroit", "salt lake city", "raleigh",
+    "charlotte", "nashville", "pittsburgh", "columbus", "indianapolis",
+    "remote, us", "remote, united states", "remote - us",
+}
+
+
+def is_us_job(job: dict) -> bool:
+    """Check if a job posting is located in the USA."""
+    # Lever API provides a 'country' field on some postings
+    country = (job.get("country") or "").strip().upper()
+    if country in ("US", "USA"):
+        return True
+
+    location = (job.get("categories", {}).get("location") or "").lower()
+    if not location:
+        return False
+
+    if any(ind in location for ind in US_INDICATORS):
+        return True
+    if "remote" in location and not any(
+        x in location for x in ("uk", "canada", "europe", "india", "apac", "emea", "latam",
+                                 "spain", "poland", "germany", "france", "ireland", "netherlands",
+                                 "brazil", "mexico", "australia", "japan", "singapore", "israel",
+                                 "portugal", "italy", "argentina", "colombia", "chile", "sweden",
+                                 "denmark", "norway", "finland", "czech", "romania", "hungary",
+                                 "austria", "switzerland", "belgium", "south africa", "nigeria",
+                                 "turkey", "korea", "taiwan", "philippines", "vietnam", "thailand",
+                                 "indonesia", "malaysia", "new zealand", "global")
+    ):
+        return True
+    if any(state in location for state in US_STATES):
+        return True
+    if any(city in location for city in US_CITIES):
+        return True
+    return False
+
+
 def matches_target_roles(job_title: str, target_roles: list[str]) -> bool:
     """Check if a job title matches any target role keywords (case-insensitive)."""
     title_lower = job_title.lower()
@@ -65,11 +119,13 @@ def make_record(
     cover_letter: str,
     status: str,
     error: str = "",
+    platform: str = "lever",
 ) -> dict:
     return {
         "posting_id": posting_id,
         "job_title": job_title,
         "company": company,
+        "platform": platform,
         "ats_score": ats_score,
         "reasoning": reasoning,
         "cover_letter": cover_letter,

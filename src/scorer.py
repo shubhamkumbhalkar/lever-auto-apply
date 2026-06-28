@@ -1,9 +1,15 @@
-"""ATS scoring and cover letter generation via Claude."""
+"""ATS scoring and cover letter generation.
+
+Supports two backends:
+  - 'local': uses kiro-cli (free, no API key needed)
+  - 'anthropic': uses Anthropic API (requires ANTHROPIC_API_KEY)
+"""
 
 import json
 import logging
-
-import anthropic
+import re
+import subprocess
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +55,93 @@ Guidelines:
 Return ONLY the cover letter text, no subject line or headers."""
 
 
+def _call_kiro(prompt: str, timeout: int = 120) -> str:
+    """Call kiro-cli chat with a prompt and return the raw response text."""
+    try:
+        result = subprocess.run(
+            ["kiro-cli", "chat", prompt, "--legacy-ui", "--trust-tools=", "--agent", "gpu-minimal"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        # Strip ANSI escape codes and carriage returns
+        raw = result.stdout
+        raw = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', raw)
+        raw = raw.replace('\r', '\n')
+        return raw
+    except subprocess.TimeoutExpired:
+        logger.error("kiro-cli timed out after %ds", timeout)
+        return ""
+    except FileNotFoundError:
+        logger.error("kiro-cli not found. Install it or use backend='anthropic'.")
+        return ""
+
+
+class LocalScorer:
+    """ATS scorer using kiro-cli (no API key needed)."""
+
+    def score_ats(self, resume_text: str, job_description: str) -> dict:
+        prompt = ATS_PROMPT.format(
+            resume_text=resume_text[:8000],
+            job_description=job_description[:4000],
+        )
+        raw = _call_kiro(prompt)
+        # Extract JSON object containing "score"
+        match = re.search(r'\{[^{}]*"score"[^{}]*\}', raw)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError as e:
+                logger.error("Failed to parse ATS JSON: %s", e)
+        return {"score": 0, "reasoning": "Failed to parse kiro-cli response"}
+
+    def generate_cover_letter(
+        self, resume_text: str, job_title: str, company: str, job_description: str
+    ) -> str:
+        prompt = COVER_LETTER_PROMPT.format(
+            resume_text=resume_text[:8000],
+            job_title=job_title,
+            company=company,
+            job_description=job_description[:4000],
+        )
+        raw = _call_kiro(prompt, timeout=180)
+        # Extract the cover letter — everything after the last "Thinking..." line
+        # and before the credits/exit lines
+        lines = raw.split('\n')
+        content_lines = []
+        capture = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('>') or stripped.startswith('▸'):
+                # This is the response marker or credits line
+                if stripped.startswith('>'):
+                    # Response content after ">"
+                    content_lines.append(stripped.lstrip('> '))
+                    capture = True
+                elif capture:
+                    break
+            elif capture:
+                content_lines.append(stripped)
+
+        text = '\n'.join(content_lines).strip()
+        if text:
+            return text
+
+        # Fallback: grab everything that looks like prose
+        prose = [l.strip() for l in lines if l.strip() and not any(
+            k in l for k in ['Thinking', 'WARNING', 'hooks finished', 'Credits:', 'exit the CLI', 'changelog', 'Model:']
+        )]
+        return '\n'.join(prose[-20:]).strip()
+
+
 class ClaudeScorer:
+    """ATS scorer using Anthropic API (requires API key)."""
+
     def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514"):
+        import anthropic
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model
 
     def score_ats(self, resume_text: str, job_description: str) -> dict:
-        """Score resume against job description. Returns {'score': int, 'reasoning': str}."""
+        import anthropic
         try:
             resp = self.client.messages.create(
                 model=self.model,
@@ -69,7 +155,6 @@ class ClaudeScorer:
                 }],
             )
             text = resp.content[0].text.strip()
-            # Strip markdown code fences if present
             if text.startswith("```"):
                 text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
             return json.loads(text)
@@ -83,7 +168,7 @@ class ClaudeScorer:
     def generate_cover_letter(
         self, resume_text: str, job_title: str, company: str, job_description: str
     ) -> str:
-        """Generate a tailored cover letter."""
+        import anthropic
         try:
             resp = self.client.messages.create(
                 model=self.model,
@@ -102,3 +187,15 @@ class ClaudeScorer:
         except anthropic.APIError as e:
             logger.error("Claude API error during cover letter generation: %s", e)
             return ""
+
+
+def create_scorer(backend: str = "local", api_key: str = ""):
+    """Factory to create the right scorer.
+
+    backend: 'local' (kiro-cli) or 'anthropic' (API key required)
+    """
+    if backend == "anthropic":
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY required for 'anthropic' backend")
+        return ClaudeScorer(api_key)
+    return LocalScorer()

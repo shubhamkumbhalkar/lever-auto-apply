@@ -1,18 +1,113 @@
-# Verified working Lever job boards (tested 2026-04-14)
-# Add more by checking: https://jobs.lever.co/{slug}
+# Companies to monitor — organized by job portal platform
+# Auto-updated by discover_companies.py
 
-companies:
-  - palantir
-  - spotify
-  - mistral
-  - coupa
-  - contentsquare
-  - field-ai
-  - spreetail
-  - achievers
-  - aledade
-  - perforce
-  - ivo
-  - ladders
-  - plaid
-  - neon
+lever:
+- achievers
+- aeva
+- agtonomy
+- aledade
+- binance
+- canarytechnologies
+- certik
+- coupa
+- epsilon3
+- ethena
+- extremenetworks
+- fampay
+- field-ai
+- finix
+- gausslabs
+- harmony
+- hermeus
+- kabam
+- kitware
+- ladders
+- mistral
+- neon
+- osaro
+- palantir
+- parallelwireless
+- perforce
+- picklerobot
+- scality
+- shieldai
+- spotify
+- spreetail
+- swordhealth
+- upguard
+- vevo
+- weride
+- zeta
+greenhouse:
+- affirm
+- airbnb
+- airtable
+- anthropic
+- block
+- chime
+- cloudflare
+- cockroachlabs
+- coinbase
+- coupang
+- databricks
+- datadog
+- discord
+- doordashusa
+- dropbox
+- duolingo
+- elastic
+- epicgames
+- figma
+- gitlab
+- gusto
+- instacart
+- lyft
+- marqeta
+- mercury
+- mongodb
+- nuro
+- okta
+- pagerduty
+- peloton
+- pinterest
+- postman
+- reddit
+- robinhood
+- roblox
+- samsara
+- scaleai
+- squarespace
+- stripe
+- twilio
+- twitch
+- vercel
+- webflow
+- zscaler
+
+ashby:
+- alchemy
+- anyscale
+- clickup
+- cohere
+- cursor
+- neon
+- notion
+- openai
+- perplexity
+- ramp
+- render
+- replit
+- resend
+- supabase
+- temporal
+
+smartrecruiters:
+- ServiceNow
+- Canva
+- Visa
+- DocuSign
+
+workday:
+# format: subdomain.wd_number/site_name
+- nvidia.wd5/NVIDIAExternalCareerSite
+- adobe.wd5/external_experienced

@@ -1,0 +1,12 @@
+#!/bin/bash
+# Daily job scan wrapper — copy to run_daily_scan.sh and adjust paths
+export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Ensure reaction poller is running
+if ! pgrep -f "reaction_poller.py" > /dev/null; then
+    python3 "$SCRIPT_DIR/reaction_poller.py" --daemon
+fi
+
+python3 "$SCRIPT_DIR/daily_scan.py" >> /tmp/daily_scan.log 2>&1

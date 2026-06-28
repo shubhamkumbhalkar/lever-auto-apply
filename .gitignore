@@ -1,6 +1,18 @@
+# Personal config
 profile.yaml
+answers_discord.yaml
+
+# Data files (contain personal application history)
 data/
+*.json.bak
+
+# Runtime
 __pycache__/
 *.pyc
+*.log
+
+# Resume
 *.pdf
-.env
+
+# Local environment
+run_daily_scan.sh

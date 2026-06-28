@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Lever Auto-Apply CLI — Automatically apply to matching jobs on Lever."""
+"""Auto-Apply CLI — Automatically apply to matching jobs on Lever and Greenhouse."""
 
-import json
 import logging
 import time
 
@@ -19,7 +18,7 @@ logging.basicConfig(
 
 @click.group()
 def cli():
-    """Lever Auto-Apply — Find and apply to matching jobs automatically."""
+    """Auto-Apply — Find and apply to matching jobs on Lever & Greenhouse."""
     pass
 
 
@@ -27,10 +26,18 @@ def cli():
 @click.option("--profile", "-p", required=True, help="Path to profile YAML config")
 @click.option("--dry-run", is_flag=True, help="Preview matches without submitting applications")
 @click.option("--watch", is_flag=True, help="Run continuously on a schedule")
-def apply(profile, dry_run, watch):
-    """Scan Lever job boards and apply to matching positions."""
+@click.option("--platform", type=click.Choice(["all", "lever", "greenhouse", "ashby"]), default="all",
+              help="Which platform to scan (default: all)")
+@click.option("--backend", type=click.Choice(["local", "anthropic"]), default="local",
+              help="AI backend: 'local' (kiro-cli, free) or 'anthropic' (needs API key)")
+def apply(profile, dry_run, watch, platform, backend):
+    """Scan job boards and apply to matching positions."""
     if dry_run:
         click.echo("🔍 DRY RUN MODE — no applications will be submitted\n")
+
+    platforms = platform if platform != "all" else "Lever + Greenhouse"
+    click.echo(f"🎯 Platforms: {platforms}")
+    click.echo(f"🤖 AI Backend: {backend}\n")
 
     if watch:
         from src.pipeline import load_config
@@ -39,23 +46,36 @@ def apply(profile, dry_run, watch):
         click.echo(f"👀 Watch mode: running every {interval} minutes. Ctrl+C to stop.\n")
         while True:
             try:
-                run_pipeline(profile, dry_run=dry_run)
+                run_pipeline(profile, dry_run=dry_run, platform=platform, backend=backend)
                 click.echo(f"\n⏳ Next run in {interval} minutes...\n")
                 time.sleep(interval * 60)
             except KeyboardInterrupt:
                 click.echo("\n👋 Stopped.")
                 break
     else:
-        run_pipeline(profile, dry_run=dry_run)
+        run_pipeline(profile, dry_run=dry_run, platform=platform, backend=backend)
 
 
 @cli.command("list-companies")
-def list_companies():
-    """Show all monitored Lever company boards."""
+@click.option("--platform", type=click.Choice(["all", "lever", "greenhouse"]), default="all")
+def list_companies(platform):
+    """Show all monitored company boards."""
     companies = load_companies()
-    click.echo(f"📋 Monitoring {len(companies)} companies:\n")
-    for c in sorted(companies):
-        click.echo(f"  • {c}  →  https://jobs.lever.co/{c}")
+
+    if platform in ("all", "lever"):
+        lever = companies.get("lever", [])
+        click.echo(f"\n📋 Lever — {len(lever)} companies:")
+        for c in sorted(lever):
+            click.echo(f"  • {c}  →  https://jobs.lever.co/{c}")
+
+    if platform in ("all", "greenhouse"):
+        gh = companies.get("greenhouse", [])
+        click.echo(f"\n🌱 Greenhouse — {len(gh)} boards:")
+        for c in sorted(gh):
+            click.echo(f"  • {c}  →  https://boards.greenhouse.io/{c}")
+
+    total = len(companies.get("lever", [])) + len(companies.get("greenhouse", []))
+    click.echo(f"\n  Total: {total} companies across all platforms")
 
 
 @cli.command()
@@ -68,9 +88,11 @@ def history():
 
     click.echo(f"📊 {len(records)} applications on record:\n")
 
-    for r in reversed(records[-20:]):  # show last 20
+    for r in reversed(records[-20:]):
         status_icon = {"submitted": "✅", "failed": "❌", "skipped": "⏭️", "dry_run": "🔍"}.get(r["status"], "❓")
-        click.echo(f"  {status_icon} [{r['ats_score']:3d}] {r['job_title']} @ {r['company']} — {r['applied_at'][:10]}")
+        plat = r.get("platform", "lever")
+        plat_icon = "🌱" if plat == "greenhouse" else "🔵"
+        click.echo(f"  {status_icon} {plat_icon} [{r['ats_score']:3d}] {r['job_title']} @ {r['company']} — {r['applied_at'][:10]}")
         if r.get("error"):
             click.echo(f"         Error: {r['error']}")
 

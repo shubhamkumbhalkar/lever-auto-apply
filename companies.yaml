@@ -104,8 +104,6 @@ ashby:
 smartrecruiters:
 - ServiceNow
 - Canva
-- Visa
-- DocuSign
 
 workday:
 # format: subdomain.wd_number/site_name

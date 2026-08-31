@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 SCRIPT_DIR = Path(__file__).parent
-SLACK_WEBHOOK_FILE = Path.home() / ".auto-apply" / "slack_webhook"
+SLACK_WEBHOOK_FILE = Path.home() / ".mcf-daily-improver" / "slack_webhook"
 MAX_WORKERS = 15
 
 
@@ -240,6 +240,96 @@ def fetch_yc_jobs():
         logging.getLogger(__name__).error("YC jobs fetch failed: %s", e)
         return []
 
+
+# US-eligible remote scopes: a US-based applicant can take these even though
+# they aren't tagged "US". Region-locked foreign scopes are left untouched so
+# the is_us_job filter still drops them.
+_US_ELIGIBLE_REMOTE = ("worldwide", "anywhere", "global", "north america", "americas")
+_FOREIGN_LOCK = ("uk", "canada", "europe", "india", "apac", "emea", "latam", "germany",
+                 "france", "ireland", "spain", "poland", "netherlands", "brazil", "mexico",
+                 "australia", "japan", "singapore", "israel", "portugal", "italy",
+                 "argentina", "colombia", "chile", "sweden", "denmark", "norway", "finland",
+                 "czech", "romania", "hungary", "austria", "switzerland", "belgium",
+                 "south africa", "nigeria", "turkey", "korea", "taiwan", "philippines",
+                 "vietnam", "thailand", "indonesia", "malaysia", "new zealand", "china")
+
+
+def _normalize_remote_location(loc: str) -> str:
+    """Map a US-eligible remote scope (Worldwide/Anywhere/Americas) to a
+    US-recognized string so is_us_job() keeps it, without letting region-locked
+    foreign roles through."""
+    low = (loc or "").lower()
+    if any(f in low for f in _FOREIGN_LOCK):
+        return loc  # region-locked → leave as-is (will be filtered out)
+    if any(s in low for s in _US_ELIGIBLE_REMOTE):
+        return "Remote, US"
+    return loc
+
+
+def fetch_remoteok(tag="dev"):
+    """Fetch remote jobs from RemoteOK's public JSON API (no auth)."""
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(f"https://remoteok.com/api?tags={tag}", headers=headers, timeout=20)
+        if r.status_code != 200:
+            return []
+        jobs = []
+        for j in r.json():
+            # First element is metadata/legal notice, skip anything without a position
+            if not isinstance(j, dict) or not j.get("position"):
+                continue
+            loc = j.get("location") or "Remote"
+            loc = _normalize_remote_location(loc)
+            url = j.get("url") or f"https://remoteok.com/remote-jobs/{j.get('slug', '')}"
+            desc = j.get("description", "")
+            jobs.append({
+                "id": f"remoteok_{j.get('id', '')}",
+                "text": j.get("position", ""),
+                "description": desc,
+                "descriptionPlain": desc,
+                "categories": {"location": loc},
+                "absolute_url": url,
+                "_company": j.get("company", ""),
+                "_platform": "remoteok",
+            })
+        return jobs
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("RemoteOK fetch failed: %s", e)
+        return []
+
+
+def fetch_remotive(category="software-dev"):
+    """Fetch remote jobs from Remotive's public JSON API (no auth)."""
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(f"https://remotive.com/api/remote-jobs?category={category}&limit=100",
+                         headers=headers, timeout=20)
+        if r.status_code != 200:
+            return []
+        jobs = []
+        for j in r.json().get("jobs", []):
+            # candidate_required_location e.g. "USA Only", "Worldwide", "Europe"
+            loc = j.get("candidate_required_location") or "Remote"
+            loc = _normalize_remote_location(loc)
+            desc = j.get("description", "")
+            jobs.append({
+                "id": f"remotive_{j.get('id', '')}",
+                "text": j.get("title", ""),
+                "description": desc,
+                "descriptionPlain": desc,
+                "categories": {"location": loc},
+                "absolute_url": j.get("url", ""),
+                "_company": j.get("company_name", ""),
+                "_platform": "remotive",
+            })
+        return jobs
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Remotive fetch failed: %s", e)
+        return []
+
+
 def scan_all(companies, target_roles, seen_ids):
     """Fetch all boards in parallel, return new matching jobs."""
     tasks = []
@@ -254,14 +344,20 @@ def scan_all(companies, target_roles, seen_ids):
             tasks.append(ex.submit(fetch_smartrecruiters, company))
         for board_config in companies.get("workday", []):
             tasks.append(ex.submit(fetch_workday, board_config))
-        # JobSpy: Indeed + Google Jobs for SF and Seattle
-        for loc in ["San Francisco, CA", "Seattle, WA"]:
+        # JobSpy: Indeed + Google Jobs across major US hubs + remote
+        for loc in ["San Francisco, CA", "Seattle, WA", "New York, NY",
+                    "Chicago, IL", "Austin, TX", "Remote"]:
             tasks.append(ex.submit(fetch_jobspy, {"location": loc}))
-        # Hiring.cafe: aggregates 46+ ATS platforms
-        tasks.append(ex.submit(fetch_hiring_cafe, "senior software engineer"))
-        tasks.append(ex.submit(fetch_hiring_cafe, "senior backend engineer"))
-        # YC Work at a Startup
-        tasks.append(ex.submit(fetch_yc_jobs))
+        # RemoteOK: remote-first aggregator (public API, no auth)
+        for tag in ["dev", "engineer", "backend"]:
+            tasks.append(ex.submit(fetch_remoteok, tag))
+        # Remotive: curated remote software jobs (public API, no auth)
+        tasks.append(ex.submit(fetch_remotive, "software-dev"))
+        # NOTE: hiring.cafe and YC Work-at-a-Startup are disabled — both added
+        # auth/bot protection (401/403/404) and now return nothing. Re-enable
+        # only with a headless-browser fetcher.
+        # tasks.append(ex.submit(fetch_hiring_cafe, "senior software engineer"))
+        # tasks.append(ex.submit(fetch_yc_jobs))
 
         all_jobs = []
         for f in concurrent.futures.as_completed(tasks):

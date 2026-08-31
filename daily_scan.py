@@ -330,6 +330,71 @@ def fetch_remotive(category="software-dev"):
         return []
 
 
+# US state abbreviations — The Muse reports locations as "City, ST", which the
+# is_us_job() filter (full state names only) would otherwise miss.
+_US_STATE_ABBR = {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID",
+    "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
+    "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK",
+    "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+    "WI", "WY", "DC",
+}
+
+
+def _muse_location(locations):
+    """Turn The Muse's location list into a string is_us_job() understands.
+    Appends ', United States' when a US state abbreviation is present; routes
+    Flexible/Remote through the remote normalizer."""
+    names = [l.get("name", "") for l in (locations or []) if l.get("name")]
+    if not names:
+        return ""
+    joined = "; ".join(names)
+    low = joined.lower()
+    if "remote" in low or "flexible" in low:
+        return _normalize_remote_location(joined)
+    for n in names:
+        for part in n.replace("/", ",").split(","):
+            if part.strip().upper() in _US_STATE_ABBR:
+                return joined + ", United States"
+    return joined
+
+
+def fetch_themuse(category="Software Engineering", pages=3):
+    """Fetch jobs from The Muse public API (no auth). Paginates a few pages."""
+    jobs = []
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        for page in range(1, pages + 1):
+            r = requests.get("https://www.themuse.com/api/public/jobs",
+                             params={"category": category, "page": page},
+                             headers=headers, timeout=20)
+            if r.status_code != 200:
+                break
+            results = r.json().get("results", [])
+            if not results:
+                break
+            for j in results:
+                company = (j.get("company") or {}).get("name", "")
+                loc = _muse_location(j.get("locations"))
+                desc = j.get("contents", "") or ""
+                url = (j.get("refs") or {}).get("landing_page", "")
+                jobs.append({
+                    "id": f"themuse_{j.get('id', '')}",
+                    "text": j.get("name", ""),
+                    "description": desc,
+                    "descriptionPlain": desc,
+                    "categories": {"location": loc},
+                    "absolute_url": url,
+                    "_company": company,
+                    "_platform": "themuse",
+                })
+        return jobs
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("The Muse fetch failed: %s", e)
+        return []
+
+
 def scan_all(companies, target_roles, seen_ids):
     """Fetch all boards in parallel, return new matching jobs."""
     tasks = []
@@ -353,6 +418,8 @@ def scan_all(companies, target_roles, seen_ids):
             tasks.append(ex.submit(fetch_remoteok, tag))
         # Remotive: curated remote software jobs (public API, no auth)
         tasks.append(ex.submit(fetch_remotive, "software-dev"))
+        # The Muse: curated roles + company profiles (public API, no auth)
+        tasks.append(ex.submit(fetch_themuse, "Software Engineering", 3))
         # NOTE: hiring.cafe and YC Work-at-a-Startup are disabled — both added
         # auth/bot protection (401/403/404) and now return nothing. Re-enable
         # only with a headless-browser fetcher.

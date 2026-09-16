@@ -2,6 +2,8 @@
 
 A Python CLI that automatically finds, scores, and helps you apply to matching software engineering jobs across **7 job board platforms**. Uses AI for ATS scoring, cover letter generation, and interview prep.
 
+> I built this to run my own job search: instead of refreshing job boards, I get a daily Slack digest of scored, matched roles with a tailored cover letter, then apply with one tap and react ✅ to track it. Sharing it in case it helps yours. PRs and new platform clients welcome.
+
 ## Features
 
 - **Multi-platform scanning** — Lever, Greenhouse, Ashby, SmartRecruiters, Workday, Indeed/Google (via JobSpy), Hiring.cafe

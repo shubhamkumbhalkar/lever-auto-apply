@@ -97,7 +97,7 @@ def generate_prep(job: dict) -> str:
 
     try:
         result = subprocess.run(
-            ["kiro-cli", "chat", prompt, "--legacy-ui", "--trust-tools=", "--agent", "gpu-minimal"],
+            ["kiro-cli", "chat", prompt, "--trust-tools=", "--agent", "gpu-minimal"],
             capture_output=True, text=True, timeout=180,
         )
         raw = result.stdout

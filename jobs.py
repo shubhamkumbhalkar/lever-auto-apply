@@ -101,7 +101,7 @@ def send_job_notification(job: dict, resume_text: str = "", scorer=None) -> bool
             import subprocess
             try:
                 result = subprocess.run(
-                    ["kiro-cli", "chat", why_prompt, "--legacy-ui", "--trust-tools=", "--agent", "gpu-minimal"],
+                    ["kiro-cli", "chat", why_prompt, "--trust-tools=", "--agent", "gpu-minimal"],
                     capture_output=True, text=True, timeout=60,
                 )
                 raw = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', result.stdout).replace('\r', '\n')

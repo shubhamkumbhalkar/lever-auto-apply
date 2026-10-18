@@ -59,7 +59,7 @@ def _call_kiro(prompt: str, timeout: int = 120) -> str:
     """Call kiro-cli chat with a prompt and return the raw response text."""
     try:
         result = subprocess.run(
-            ["kiro-cli", "chat", prompt, "--legacy-ui", "--trust-tools=", "--agent", "gpu-minimal"],
+            ["kiro-cli", "chat", prompt, "--trust-tools=", "--agent", "gpu-minimal"],
             capture_output=True, text=True, timeout=timeout,
         )
         # Strip ANSI escape codes and carriage returns

@@ -128,6 +128,15 @@ def send_job_notification(job: dict, resume_text: str = "", scorer=None) -> bool
     if why_company:
         msg += f"\n*❓ Why {job.get('_company', 'this company')}?*\n_{why_company}_\n"
 
+    # ATS check: resume parseability + keyword coverage vs this posting (signal only, no stuffing)
+    if resume_text:
+        try:
+            from src.ats_check import report as ats_report
+            desc_for_ats = re.sub(r"<[^>]+>", " ", job.get("descriptionPlain") or job.get("description", "") or job.get("text", ""))
+            msg += "\n" + ats_report(resume_text, desc_for_ats) + "\n"
+        except Exception as e:
+            logger.warning("ats_check failed: %s", e)
+
     msg += (
         f"\n───────────────\n"
         f"`jobs.py applied {job_id}` → mark as applied ✅"

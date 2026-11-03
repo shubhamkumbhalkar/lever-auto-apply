@@ -31,6 +31,17 @@ SCRIPT_DIR = Path(__file__).parent
 SLACK_WEBHOOK_FILE = Path.home() / ".mcf-daily-improver" / "slack_webhook"
 MAX_WORKERS = 15
 
+# Indeed + Google (via JobSpy) are high-volume, lower-signal aggregators. They are
+# scored last and posted in their own separate Slack digest so they don't pollute the
+# curated ATS board results (Lever/Greenhouse/Ashby/etc.).
+LOW_PRIORITY_PLATFORMS = {"indeed", "google"}
+
+
+def is_low_priority(job):
+    """True for Indeed/Google (JobSpy) aggregator jobs, including the bundled fallback tag."""
+    p = (job.get("_platform", "") or "").lower()
+    return p in LOW_PRIORITY_PLATFORMS or p == "indeed/google"
+
 
 def fetch_lever(slug):
     try:
@@ -148,6 +159,8 @@ def fetch_jobspy(search_config):
             url = str(row.get("job_url", ""))
             desc = str(row.get("description", ""))
             job_id = str(row.get("id", "")) or f"jobspy_{hash(url) % 100000}"
+            site = str(row.get("site", "")).strip().lower()
+            platform = site if site in ("indeed", "google") else "indeed/google"
             jobs.append({
                 "id": job_id,
                 "text": title,
@@ -156,7 +169,7 @@ def fetch_jobspy(search_config):
                 "categories": {"location": loc},
                 "absolute_url": url,
                 "_company": company,
-                "_platform": "indeed/google",
+                "_platform": platform,
             })
         return jobs
     except Exception as e:
@@ -459,6 +472,8 @@ def score_jobs(jobs, resume_text, threshold=75, max_to_score=100):
         platform_jobs.setdefault(j.get("_platform", ""), []).append(j)
 
     for platform, pjobs in platform_jobs.items():
+        if platform.lower() in LOW_PRIORITY_PLATFORMS or platform.lower() == "indeed/google":
+            continue  # Indeed/Google get no guaranteed slots; they fill leftover capacity only
         added = 0
         for j in pjobs:
             if added >= 5 or len(to_score) >= max_to_score:
@@ -469,8 +484,8 @@ def score_jobs(jobs, resume_text, threshold=75, max_to_score=100):
                 company_count[company] += 1
                 added += 1
 
-    # Second pass: fill up to max with remaining, respecting company cap
-    for j in all_candidates:
+    # Second pass: fill up to max with remaining, curated boards before aggregators.
+    for j in sorted(all_candidates, key=lambda x: 1 if is_low_priority(x) else 0):
         if len(to_score) >= max_to_score:
             break
         if j in to_score:
@@ -492,13 +507,14 @@ def score_jobs(jobs, resume_text, threshold=75, max_to_score=100):
     return results
 
 
-def build_digest(scored_jobs, threshold=75):
+def build_digest(scored_jobs, threshold=75, title=None):
     """Build a formatted digest message."""
     above = [j for j in scored_jobs if j["_score"] >= threshold]
     below = [j for j in scored_jobs if j["_score"] < threshold and j["_score"] >= 60]
 
     lines = []
-    lines.append(f"🎯 *Job Scan Results — {datetime.now().strftime('%B %d, %Y')}*\n")
+    header = title or f"🎯 *Job Scan Results — {datetime.now().strftime('%B %d, %Y')}*"
+    lines.append(header + "\n")
 
     if above:
         lines.append(f"*✅ {len(above)} jobs above threshold ({threshold}+):*\n")
@@ -663,22 +679,38 @@ def main():
 
     # Build and send
     effective_threshold = threshold if not args.no_score else 0
-    slack_msg = build_digest(scored, effective_threshold)
-    email_html = build_email_html(scored, effective_threshold)
+    # Bifurcate: curated boards in the main digest, Indeed/Google in a separate one.
+    curated = [j for j in scored if not is_low_priority(j)]
+    aggregator = [j for j in scored if is_low_priority(j)]
+
+    slack_msg = build_digest(curated, effective_threshold)
+    email_html = build_email_html(curated, effective_threshold)
+    agg_msg = build_digest(aggregator, effective_threshold,
+                           title="📇 Indeed + Google (lower priority)") if aggregator else ""
 
     if args.dry_run:
         print(slack_msg)
+        if agg_msg:
+            print("\n" + "=" * 60 + "\n[SEPARATE MESSAGE]\n" + agg_msg)
         return
 
-    # Send via both channels
+    # Send the curated digest first, then the lower-priority Indeed/Google digest separately
     if send_slack(slack_msg):
-        logger.info("✅ Slack digest sent")
+        logger.info("✅ Slack digest sent (%d curated jobs)", len(curated))
     else:
         logger.warning("❌ Slack failed")
 
-    # Save qualified jobs and send individual notifications with cover letters
-    # Only send individual notifications when ATS scoring actually ran (not stale midway fallback)
-    above = [j for j in scored if j.get("_score", 0) >= effective_threshold]
+    if agg_msg:
+        time.sleep(1)
+        if send_slack(agg_msg):
+            logger.info("✅ Indeed/Google digest sent (%d jobs)", len(aggregator))
+        else:
+            logger.warning("❌ Indeed/Google Slack failed")
+
+    # Save qualified jobs and send individual notifications with cover letters.
+    # Only for CURATED jobs (Indeed/Google are browse-only; no auto cover letters).
+    # Only when ATS scoring actually ran (not stale midway fallback).
+    above = [j for j in curated if j.get("_score", 0) >= effective_threshold]
     if above and not args.no_score:
         from jobs import save_qualified, load_qualified, load_applied, send_job_notification
         existing = load_qualified()
